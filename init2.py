@@ -3,6 +3,7 @@
 # Directory structure:
 # src/
 # |-- main.f90
+# |-- module0.f90
 # |-- module1.f90
 # |-- module2.f90
 # |-- utils/
@@ -16,17 +17,30 @@ os.makedirs("src/utils", exist_ok=True)
 # Define the contents of the Fortran files
 main_program = """
 program main
+    use module0
     use module1
     use module2
     use util_module
-
     implicit none
-
     write(*,*) 'Main program using modules.'
+    call module0_subroutine()
     call module1_subroutine()
     call module2_subroutine()
     call util_subroutine()
 end program main
+"""
+
+
+module0 = """
+module module0
+    use module1
+    use module2
+    implicit none
+contains
+    subroutine module0_subroutine()
+        write(*,*) 'This is module0 subroutine.'
+    end subroutine module0_subroutine
+end module module0
 """
 
 module1 = """
@@ -63,6 +77,9 @@ end module util_module
 with open("src/main.f90", "w") as file:
     file.write(main_program)
 
+with open("src/module0.f90", "w") as file:
+    file.write(module0)
+
 with open("src/module1.f90", "w") as file:
     file.write(module1)
 
@@ -71,31 +88,3 @@ with open("src/module2.f90", "w") as file:
 
 with open("src/utils/util_module.f90", "w") as file:
     file.write(util_module)
-
-# Create a basic SCons script to compile the project
-scons_script = """
-# SCons script to compile a Fortran project with multiple files and dependencies
-
-import os
-
-# Environment setup
-env = Environment(FORTRANFLAGS='-c', tools=['default', 'fortran'])
-
-# Source directory
-src_dir = 'src'
-
-# List of source files
-source_files = [os.path.join(src_dir, f) for f in os.listdir(src_dir) if f.endswith('.f90')]
-source_files += [os.path.join(src_dir, 'utils', f) for f in os.listdir(os.path.join(src_dir, 'utils')) if f.endswith('.f90')]
-
-# Build targets
-for source in source_files:
-    obj = env.Object(source.replace('.f90', '.o'), source)
-    env.Program(target='main', source=obj)
-"""
-
-# Write the SCons script to a file
-with open("SConstruct", "w") as file:
-    file.write(scons_script)
-
-

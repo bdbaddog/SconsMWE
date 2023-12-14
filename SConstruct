@@ -1,95 +1,74 @@
-# SCons script to compile and link a Fortran project with .o files in './.obj' and .mod files in './.mod'
+from copy import deepcopy
+import os
+import fortdepend as fdep
+from  SCons.Environment import Environment
 
-import os, subprocess
+fexts = ['.f', '.for', '.f90', '.f95', '.f03', '.f08']
 
+def find_fortran_files(root_dir, fortran_extensions, abspath=False):
+  """Find all Fortran source files in src directory and its subdirectories"""
+  source_files = []
+  for dir, _, files in os.walk(root_dir):
+    for file in files:
+      if any(file.endswith(ext) for ext in fortran_extensions):
+        source_files.append( os.path.join(dir, file) if abspath else os.path.join(dir.replace(root_dir, '.'), file))
+  return source_files
 
+def fortran_source_to_object(source, fortran_extensions):
+  """replace the fortran ext with .o"""
+  for ext in fortran_extensions:
+    if source.endswith(ext):
+      return source.replace(ext, '.o')
+s2o = lambda src: fortran_source_to_object(str(src), fexts)
+ss2os = lambda srcs: [fortran_source_to_object(str(src), fexts) for src in srcs]
 
-# Function to run fortdepend and generate dependency file
-def generate_fortran_dependencies(source_files, dep_file):
-    command = ['fortdepend', '-w', '-o', dep_file, '-f', *source_files]
-    print(command)
-    subprocess.run(command)
-
-def parse_fortdepend_dependencies(dep_file):
-  dependencies = {}
-  target = None
-  with open(dep_file, 'r') as file:
-      for line in file:
-        if not line.startswith('#') and not line.strip()=='':
-          # print('line', line)
-          if ':' in line:
-              # store old target and deps
-              if target:
-                dependencies[target] = deps
-              target = line.split(':')[0].strip()
-              deps = []
-              # print('new target', target)
-          else:
-            _dep = line.replace('/', '').replace('/t', ' ').replace('/n', ' ').replace('\\', ' ').strip()
-            deps.append(_dep)
-  print(dependencies)
-  return dependencies
-
+def generate_fortran_dependencies(source_files, fortran_extensions, **kwargs):
+  """ use fortdepend to get dependencies"""
+  fproj = fdep.FortranProject(files=source_files, **kwargs)
+  source_deps, prog_deps = {}, {}
+  for key, val in fproj.depends_by_module.items():
+    _key = key.source_file.filename
+    _val = [v.source_file.filename for v in val] 
+    if key.unit_type=='module':
+      source_deps[_key] = _val
+    elif key.unit_type=='program':
+      prog_deps[_key] = _val
+  return source_deps, prog_deps
 
 # Set up the environment with Fortran compiler and linker options
 env = Environment(tools=['default', 'gfortran'], F90='gfortran', LINK='gfortran', LINKFLAGS='', F90FLAGS='')
 
-# Source directory
-src_dir = 'src'
+# get source files
+all_files = find_fortran_files(os.getcwd(), fortran_extensions=fexts, abspath=False)
+print('- all files with fortran ext found: ', all_files)
 
-# Object and module directories
-obj_dir = './.obj'
-mod_dir = './.mod'
-dep_file = "deps.txt"
+# get deps
+source_deps, prog_deps = generate_fortran_dependencies(all_files, fexts)
+source_files = list(source_deps.keys())
+prog_files = list(prog_deps.keys())
+print('- all source deps (no progs)       ', source_deps)
+print('- all program deps found           ', prog_deps)
+print('- all source files (no progs)      ', source_files)
+print('- all prog files                   ', prog_files)
 
-# Create object and module directories if they do not exist
-if not os.path.exists(obj_dir):
-    os.makedirs(obj_dir)
-if not os.path.exists(mod_dir):
-    os.makedirs(mod_dir)
-
-# Fortran file extensions
-fortran_extensions = ['.f', '.for', '.f90', '.f95', '.f03', '.f08']
-
-# Find all Fortran source files in src directory and its subdirectories
-source_files = []
-for root, dirs, files in os.walk(src_dir):
-    for file in files:
-        if any(file.endswith(ext) for ext in fortran_extensions):
-            full_path = os.path.join(root, file)
-            source_files.append(full_path)
-
-print('source_files', source_files)
-generate_fortran_dependencies(source_files, dep_file)
-dependencies = parse_fortdepend_dependencies(dep_file)
-
-
-... ändere parse_fortdepend_dependencies so , dass die paths beibehalten werden! ...
-
-# Compile each source file into an object file
 objects = []
-for src in source_files:
-    obj_path = os.path.join(obj_dir, os.path.splitext(os.path.basename(src))[0] + '.o')
-    objects.extend(env.Object(target=obj_path, source=src))
+for prog in source_deps:
+    obj_path = os.path.splitext(prog)[0] + '.o'
+    _object = env.Object(obj_path, prog)
+    print(f'-- tell SCons {obj_path} also depends on {source_deps[prog]}')
+    env.Depends(target=_object, dependency = source_deps[prog])
+    objects.append(_object)
+print('- all SCons objects', [str(o) for o in objects])
+print('- all SCons objects', [o for o in objects])
+print('- remark: SCons handles Fortran objects as tuples of module and object files')
 
-print('objects', objects)
-for target in dependencies:
-    print(' - target', target)
+for prog in prog_deps:
+  prog_name = os.path.splitext(os.path.basename(prog))[0]
+  print(prog_name)
+  print(f'-- tell SCons {prog_name} also depends on {ss2os(prog_deps[prog])}')
+  env.Depends(target=prog_name, dependency = prog_deps[prog])
 
-    deps = dependencies[target]
-    obj_path = os.path.join(obj_dir, os.path.splitext(os.path.basename(target))[0] + '.o')
-    source_files = [os.path.join(src_dir, dep) for dep in deps]
-    print('target=',obj_path, 'source=', source_files)
-    _object = env.Object(target=obj_path, sources=source_files)
-    objects.extend(_object)
-
-
-
-# Specify where to place the object and module files
-env.Replace(OBJSUFFIX='.o', FORTRANMODDIR=mod_dir, FORTRANMODPREFIX='')
-
-
-# Link the object files into an executable
 # Filter out .mod files from the objects list
-objects_for_linking = [obj for obj in objects if str(obj).endswith('.o')]
+objects_for_linking = [str(o[0]) for o in objects]
+print('objects_for_linking', objects_for_linking)
 env.Program(target='main', source=objects_for_linking)
