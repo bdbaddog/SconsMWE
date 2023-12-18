@@ -14,11 +14,13 @@ def find_fortran_files(root_dir, fortran_extensions, abspath=False):
   return source_files
 
 def fortran_source_to_object(source, fortran_extensions):
-  """simply replace the fortran extension with .o"""
+  """replace the fortran ext with .o"""
   for ext in fortran_extensions:
     if source.endswith(ext):
       return source.replace(ext, '.o')
+s2o = lambda src: fortran_source_to_object(str(src), fexts)
 ss2os = lambda srcs: [fortran_source_to_object(str(src), fexts) for src in srcs]
+
 
 def generate_fortran_dependencies(source_files, fortran_extensions, **kwargs):
   """ use fortdepend to get dependencies """
@@ -47,7 +49,7 @@ print('- all source files (no progs)      ', source_files)
 print('- all prog files                   ', prog_files)
 
 objects = []
-all_deps = {**prog_deps, **source_deps}
+all_deps = {**source_deps, **prog_deps}
 for src in all_deps:
     obj_path = os.path.splitext(src)[0] + '.o'
     object = env.Object(obj_path, src)
@@ -56,10 +58,10 @@ for src in all_deps:
     objects.append(object)
 print('- all SCons objects', [str(o) for o in objects])
 
-for src in prog_deps:
-  prog_name = os.path.splitext(os.path.basename(src))[0]
-  print(f'--  tell SCons {src} is a program with target name {prog_name}')
-  env.Depends(target=prog_name, dependency = prog_deps[src])
+for prog in prog_deps:
+  prog_name = os.path.splitext(os.path.basename(prog))[0]
+  print(f'-- tell SCons {prog_name} also depends on {ss2os(prog_deps[prog])}')
+  env.Depends(target=prog_name, dependency = ss2os(prog_deps[prog]))
 
 # Filter out .mod files from the objects list
 objects_for_linking = [str(o[0]) for o in objects] # get only the first entry which is the object file 
