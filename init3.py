@@ -11,6 +11,8 @@ end program main
 """
 module0 = """
 module module0
+    use module1
+    use module2
     implicit none
 end module module0
 """
@@ -21,8 +23,6 @@ end module module1
 """
 module2 = """
 module module2
-    use module0
-    use module1
     implicit none
 end module module2
 """
