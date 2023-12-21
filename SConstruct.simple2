@@ -88,14 +88,7 @@ for src in all_deps:
 print("- all SCons objects", [str(o) for o in objects])
 
 for prog in prog_deps:
-    obj = get_mods_from_sources(src_info, prog)
-    obj = src_info[prog]["obj"]
-    mod_deps = [src_info[d]['mod'] for d in all_deps[src] if src_info[d]['mod']]
-    mod_deps_s = [str(m) for m in mod_deps]
-
-    prog_name = os.path.splitext(os.path.basename(prog))[0]
-    print(f"-- tell SCons {prog_name} also depends on {mod_deps_s}")
-    env.Depends(target=prog_name, dependency=mod_deps)
+    get_mods_from_sources(src_info, prog)
 
 # Filter out .mod files from the objects list
 objects_for_linking = [
