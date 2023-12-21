@@ -90,11 +90,5 @@ print("- all SCons objects", [str(o) for o in objects])
 for prog in prog_deps:
     get_mods_from_sources(src_info, prog)
 
-# Filter out .mod files from the objects list
-objects_for_linking = [
-    str(o) for o in objects
-] 
-print("- all SCons objects for linking", objects_for_linking)
-
 prog_to_make = "main"
 env.Program(target=prog_to_make, source=all_deps.keys())
