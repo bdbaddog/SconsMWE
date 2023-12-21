@@ -1,0 +1,4 @@
+env = Environment(tools=['default', 'gfortran'], F90='gfortran', 
+                  LINK='gfortran', LINKFLAGS='', FORTRANMODDIR='fortran_mods')
+sources = env.Glob('*.f90')
+env.Program('main', sources)
