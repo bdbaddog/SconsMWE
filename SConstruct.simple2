@@ -1,6 +1,107 @@
-env = Environment(tools=['default', 'gfortran'], F90='gfortran', 
-                  LINK='gfortran', LINKFLAGS='', FORTRANMODDIR='fortran_mods')
+import os
+import fortdepend as fd
 
-sources = env.Glob('src/*.f90') + env.Glob('src/utils/*.f90')
+fexts = [".f", ".for", ".f90", ".f95", ".f03", ".f08"]
 
-env.Program('main', sources)
+
+def find_fortran_files(root_dir, fortran_extensions, abspath=False):
+    """Find all Fortran source files in src directory and its subdirectories"""
+    source_files = []
+    for dir, _, files in os.walk(root_dir):
+        for file in files:
+            if any(file.endswith(ext) for ext in fortran_extensions):
+                source_files.append(
+                    os.path.join(dir, file)
+                    if abspath
+                    else os.path.join(dir.replace(root_dir, "."), file)
+                )
+    return source_files
+
+
+def generate_fortran_dependencies(source_files, fortran_extensions, **kwargs):
+    """use fortdepend to get dependencies"""
+    fproj = fd.FortranProject(files=source_files, **kwargs)
+    source_deps, prog_deps = {}, {}
+    for key, val in fproj.depends_by_module.items():
+        _key = key.source_file.filename
+        _val = [v.source_file.filename for v in val]
+        if key.unit_type == "module":
+            source_deps[_key] = _val
+        elif key.unit_type == "program":
+            prog_deps[_key] = _val
+    return source_deps, prog_deps
+
+
+def get_mods_from_sources(src_info, src):
+    """
+    Using info from dictionary of soures and they're generated objects and modules
+    return just a list of modules as Nodes and also as strings
+    """
+    obj = src_info[src]["obj"]
+    mod_deps = [src_info[d]['mod'] for d in all_deps[src] if src_info[d]['mod']]
+    mod_deps_s = [str(m) for m in mod_deps]
+    print(f"-- tell SCons {obj} also depends on {mod_deps_s}")
+    env.Depends(target=obj, dependency=mod_deps)
+    return obj
+
+
+env = Environment(
+    tools=["default", "gfortran"],
+    F90="gfortran",
+    LINK="gfortran",
+    LINKFLAGS="",
+    FORTRANMODDIR="fortran_mods",
+)
+
+all_files = find_fortran_files(os.getcwd(), fortran_extensions=fexts, abspath=False)
+print("- all files found with fortran ext: ", all_files)
+
+source_deps, prog_deps = generate_fortran_dependencies(all_files, fexts)
+source_files = list(source_deps.keys())
+prog_files = list(prog_deps.keys())
+print("- all source deps (no progs)       ", source_deps)
+print("- all program deps found           ", prog_deps)
+print("- all source files (no progs)      ", source_files)
+print("- all prog files                   ", prog_files)
+
+
+# Create all the objects from source files, keeping separate info
+# on generated objects and fortran module files.
+src_info = dict()
+for s in all_files:
+    print(f"Object for {s}")
+    rv = env.Object(s)
+    obj = rv[0]
+    if len(rv) == 2:
+        mod = rv[1]
+    else:
+        mod = False
+
+    src_info[s] = {"obj": obj, "mod": mod}
+
+
+objects = []
+all_deps = {**source_deps, **prog_deps}
+for src in all_deps:
+    obj = get_mods_from_sources(src_info, src)
+    objects.append(obj)
+print("- all SCons objects", [str(o) for o in objects])
+
+for prog in prog_deps:
+    obj = get_mods_from_sources(src_info, prog)
+    obj = src_info[prog]["obj"]
+    mod_deps = [src_info[d]['mod'] for d in all_deps[src] if src_info[d]['mod']]
+    mod_deps_s = [str(m) for m in mod_deps]
+
+    prog_name = os.path.splitext(os.path.basename(prog))[0]
+    print(f"-- tell SCons {prog_name} also depends on {mod_deps_s}")
+    env.Depends(target=prog_name, dependency=mod_deps)
+
+# Filter out .mod files from the objects list
+objects_for_linking = [
+    str(o) for o in objects
+] 
+print("- all SCons objects for linking", objects_for_linking)
+
+prog_to_make = "main"
+env.Program(target=prog_to_make, source=all_deps.keys())
